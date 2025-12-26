@@ -1,0 +1,119 @@
+"""
+Equilibrium Kernel + Quantum Hook
+---------------------------------
+Defines
+
+    E_s(chi) = (T_A(chi) + T_B(chi)) / (2 * Phi(chi))
+
+and shows how to map E_s into a rotation angle theta(chi)
+for use in quantum circuits (e.g. with Qiskit).
+
+All model functions T_A, T_B, Phi are simple, explicit,
+and easy to replace with domain-specific versions.
+"""
+
+import numpy as np
+
+# ---------- 1. Thermodynamic-style model layer ----------
+
+def T_A(chi: float) -> float:
+    """Example: relaxation of subsystem A toward environment temperature."""
+    T_env = 300.0
+    return T_env + 20.0 * np.exp(-chi / 1e4)
+
+
+def T_B(chi: float) -> float:
+    """Example: relaxation of subsystem B toward environment temperature."""
+    T_env = 300.0
+    return T_env - 15.0 * np.exp(-chi / 8e3)
+
+
+def Phi(chi: float) -> float:
+    """Example: smooth, strictly non-zero scaling field."""
+    return 1.0 + 0.1 * np.tanh(chi / 1e4)
+
+
+def E_s(chi: float) -> float:
+    r"""
+    Equilibrium score:
+
+        E_s(chi) = (T_A(chi) + T_B(chi)) / (2 * Phi(chi))
+
+    Replace T_A, T_B, Phi with any physically motivated functions
+    preserving dimensional consistency.
+    """
+    ta = T_A(chi)
+    tb = T_B(chi)
+    phi = Phi(chi)
+    if phi == 0.0:
+        raise ZeroDivisionError("Phi(chi) must not be zero.")
+    return (ta + tb) / (2.0 * phi)
+
+
+def theta_from_Es(chi: float) -> float:
+    """
+    Map E_s(chi) to a phase angle in [0, 2π).
+
+    This keeps the construction general: any scalar E_s can be
+    used as a gate parameter via this normalization.
+    """
+    Es = E_s(chi)
+    frac = Es % 1.0        # keep only fractional part
+    return frac * 2.0 * np.pi
+
+
+# ---------- 2. Quantum interface (example with Qiskit) ----------
+
+try:
+    from qiskit import QuantumCircuit
+except ImportError:
+    QuantumCircuit = None
+
+
+def build_example_circuit(chi_star: float):
+    """
+    Example: build a 3-qubit GHZ-like circuit parameterized by theta(chi*).
+
+    Qubit ordering: [0, 1, 2]
+    - H on qubit 2
+    - CX (2 -> 0), CX (2 -> 1)
+    - RZ(theta) on qubits 0 and 1
+
+    This function is only active if Qiskit is installed.
+    """
+    if QuantumCircuit is None:
+        raise RuntimeError("Qiskit not available: install qiskit to use this hook.")
+
+    theta = theta_from_Es(chi_star)
+
+    qc = QuantumCircuit(3)
+    qc.h(2)
+    qc.cx(2, 0)
+    qc.cx(2, 1)
+    qc.rz(theta, 0)
+    qc.rz(theta, 1)
+
+    return qc, theta
+
+
+# ---------- 3. Reference point (chi → 60106) ----------
+
+CHI_STAR = 60106.0
+
+if __name__ == "__main__":
+    Es_val = E_s(CHI_STAR)
+    theta  = theta_from_Es(CHI_STAR)
+
+    print(f"chi*           = {CHI_STAR}")
+    print(f"E_s(chi*)      = {Es_val}")
+    print(f"theta(chi*)    = {theta} rad")
+    print(f"theta / 2π     = {theta / (2*np.pi)}")
+
+    if QuantumCircuit is not None:
+        qc, _ = build_example_circuit(CHI_STAR)
+        print("
+Example circuit parameterized by theta(chi*):")
+        print(qc.draw(output='text'))
+    else:
+        print("
+Qiskit not installed: quantum circuit hook is defined but not executed.")
